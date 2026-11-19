@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portlume | Cisco Dashboard</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+{% macro output(id, title, hint, text) %}
+<section class="out" id="{{ id }}">
+    <details open>
+        <summary>
+            <span class="out-title">{{ title }}</span>
+            <span class="out-meta" data-lines-for="t-{{ id }}"></span>
+        </summary>
+        <div class="out-body">
+            <div class="out-tools">
+                <span class="hint">{{ hint }}</span>
+                <button type="button" class="ghost" data-copy="t-{{ id }}">Copy output</button>
+            </div>
+            <pre class="terminal" id="t-{{ id }}">{{ text }}</pre>
+        </div>
+    </details>
+</section>
+{% endmacro %}
+
+<body>
+<div class="shell">
+
+    <aside class="rail">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+            Portlume
+        </div>
+
+        <nav class="nav" aria-label="Sections">
+            <a href="#overview" class="is-active">Overview</a>
+            <a href="#commands">Commands</a>
+            <a href="#interfaces" class="{{ '' if results.get('interfaces') else 'is-off' }}">Interfaces</a>
+            <a href="#version" class="{{ '' if results.get('version') else 'is-off' }}">System info</a>
+            <a href="#config" class="{{ '' if results.get('config') else 'is-off' }}">Running config</a>
+        </nav>
+
+        <div class="rail-foot">
+            Telnet session<br>
+            <span>{{ router_ip }}:{{ router_port }}</span>
+        </div>
+    </aside>
+
+    <main class="stage">
+
+        <header class="head">
+            <div>
+                <h1>Cisco router dashboard</h1>
+                <p>Pull interface status, version and configuration from your router.</p>
+            </div>
+        </header>
+
+        {% if success %}
+        <div class="notice ok" role="status">
+            <strong>Commands completed.</strong> Output is listed below.
+        </div>
+        {% endif %}
+
+        {% if error %}
+        <div class="notice bad" role="alert">
+            <strong>Could not reach the router.</strong>
+            <span>{{ error }}</span>
+            <small>Check that {{ router_ip }} is reachable, Telnet is enabled on port {{ router_port }}, and the login details are correct.</small>
+        </div>
+        {% endif %}
+
+        <section class="plate" id="overview">
+            <dl class="ident">
+                <div>
+                    <dt>Router IP</dt>
+                    <dd class="mono">{{ router_ip }}</dd>
+                </div>
+                <div>
+                    <dt>Telnet port</dt>
+                    <dd class="mono">{{ router_port }}</dd>
+                </div>
+                <div>
+                    <dt>Last operation</dt>
+                    {% if success %}
+                        <dd class="state ok"><i></i>Successful</dd>
+                    {% elif error %}
+                        <dd class="state bad"><i></i>Failed</dd>
+                    {% else %}
+                        <dd class="state"><i></i>Waiting</dd>
+                    {% endif %}
+                </div>
+            </dl>
+
+            <div class="front">
+                <div class="front-head">
+                    <span>Front panel</span>
+                    <span id="portSummary">Run a command to read port status</span>
+                </div>
+                <div class="ports" id="ports" aria-label="Interface status">
+                    {% for n in range(8) %}<span class="port off" style="--i: {{ n }}"></span>{% endfor %}
+                </div>
+            </div>
+        </section>
+
+        <section class="commands" id="commands">
+            <div class="section-head">
+                <div>
+                    <h2>Commands</h2>
+                    <p>Run one command, or all of them in a single session.</p>
+                </div>
+                <div class="section-actions">
+                    <a class="ghost" href="/">Clear dashboard</a>
+                    <form method="POST">
+                        <input type="hidden" name="action" value="all">
+                        <button type="submit" class="primary">Run all commands</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="cmd-grid">
+                {% for key, item in commands.items() %}
+                <form method="POST">
+                    <input type="hidden" name="action" value="{{ key }}">
+                    <button type="submit" class="cmd">
+                        {% if key == 'interfaces' %}
+                            <strong>Interface status</strong>
+                            <span>Which ports are up, down or disabled</span>
+                        {% elif key == 'version' %}
+                            <strong>Show version</strong>
+                            <span>IOS release, uptime and hardware</span>
+                        {% elif key == 'config' %}
+                            <strong>Running config</strong>
+                            <span>The configuration active right now</span>
+                        {% else %}
+                            <strong>{{ key }}</strong>
+                            <span>Run this command</span>
+                        {% endif %}
+                    </button>
+                </form>
+                {% endfor %}
+            </div>
+        </section>
+
+        {% if results.get('interfaces') %}
+            {{ output('interfaces', 'Interface status', 'Interface, IP address, status and protocol', results['interfaces']) }}
+        {% endif %}
+
+        {% if results.get('version') %}
+            {{ output('version', 'System information', 'Software version and hardware details', results['version']) }}
+        {% endif %}
+
+        {% if results.get('config') %}
+            {{ output('config', 'Running configuration', 'Active configuration on the device', results['config']) }}
+        {% endif %}
+
+        {% if not results and not error %}
+        <section class="empty">
+            <h2>No output yet</h2>
+            <p>Select Run all commands to read interface status, version and configuration from {{ router_ip }}.</p>
+        </section>
+        {% endif %}
+
+        <footer>Portlume · Python, Flask and Netmiko</footer>
+    </main>
+</div>
+
+<script>
+(() => {
+    const $ = (s, r = document) => r.querySelector(s);
+    const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+    $$('form[method="POST"]').forEach(f => f.addEventListener('submit', e => {
+        document.body.classList.add('busy');
+        const btn = e.submitter || $('button', f);
+        if (btn) btn.classList.add('loading');
+        $('#portSummary').textContent = 'Connecting to router…';
+    }));
+
+    const raw = $('#t-interfaces');
+    if (raw) {
+        const short = n => n.replace(/^GigabitEthernet/, 'Gi').replace(/^FastEthernet/, 'Fa')
+                            .replace(/^TenGigabitEthernet/, 'Te').replace(/^Ethernet/, 'Et')
+                            .replace(/^Serial/, 'Se').replace(/^Loopback/, 'Lo').replace(/^Vlan/, 'Vl');
+        const rows = raw.textContent.split('\n').map(l =>
+            l.match(/^(\S+)\s+(\S+)\s+\S+\s+\S+\s+(administratively down|up|down)\s+(up|down)\s*$/)
+        ).filter(Boolean);
+
+        if (rows.length) {
+            const MAX = 12;
+            const box = $('#ports');
+            box.innerHTML = '';
+            const tally = { up: 0, down: 0, off: 0 };
+
+            rows.forEach((m, i) => {
+                const [, name, ip, status, proto] = m;
+                const state = status === 'administratively down' ? 'off'
+                            : status === 'up' && proto === 'up' ? 'up'
+                            : status === 'up' ? 'warn' : 'down';
+                tally[state === 'off' ? 'off' : state === 'up' ? 'up' : 'down']++;
+                if (i >= MAX) return;
+
+                const cell = document.createElement('span');
+                cell.className = 'cell';
+                cell.style.setProperty('--i', i);
+                cell.innerHTML = '<span class="port ' + state + '"></span><em></em>';
+                cell.title = name + ' · ' + ip + ' · ' + status + '/' + proto;
+                $('em', cell).textContent = short(name);
+                box.appendChild(cell);
+            });
+
+            if (rows.length > MAX) {
+                const more = document.createElement('span');
+                more.className = 'more';
+                more.textContent = '+' + (rows.length - MAX);
+                box.appendChild(more);
+            }
+            $('#portSummary').textContent =
+                tally.up + ' up · ' + tally.down + ' down · ' + tally.off + ' disabled';
+        }
+    }
+
+    $$('[data-lines-for]').forEach(el => {
+        const t = document.getElementById(el.dataset.linesFor);
+        if (t) el.textContent = t.textContent.trim().split('\n').length + ' lines';
+    });
+
+    $$('[data-copy]').forEach(btn => btn.addEventListener('click', async () => {
+        const t = document.getElementById(btn.dataset.copy);
+        const label = btn.textContent;
+        try {
+            await navigator.clipboard.writeText(t.textContent);
+            btn.textContent = 'Copied';
+        } catch {
+            btn.textContent = 'Copy failed';
+        }
+        setTimeout(() => (btn.textContent = label), 1600);
+    }));
+
+    const links = $$('.nav a');
+    const io = new IntersectionObserver(entries => {
+        entries.forEach(en => {
+            if (!en.isIntersecting) return;
+            links.forEach(a => a.classList.toggle('is-active', a.getAttribute('href') === '#' + en.target.id));
+        });
+    }, { rootMargin: '-35% 0px -55% 0px' });
+    links.forEach(a => { const s = $(a.getAttribute('href')); if (s) io.observe(s); });
+
+    const first = $('.out');
+    if (first) setTimeout(() => first.scrollIntoView({ behavior: 'smooth', block: 'start' }), 350);
+})();
+</script>
+
+</body>
+</html>
